@@ -125,7 +125,7 @@ impl Paths {
         // );
         let simple: BezPath = skia_safe::simplify(&skia_path)
             .map(|p| skia_path_to_bezpath(&p))
-            .expect("Couldn't remove overlap");
+            .unwrap_or(self.path.clone());
         Paths { path: simple }
     }
 }
