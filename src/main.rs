@@ -2,7 +2,7 @@ mod bezpen;
 mod wonkiness;
 use bezpen::Paths;
 use read_fonts::{tables::glyf::Glyph, TableProvider};
-use std::path::PathBuf;
+use std::{collections::BTreeSet, path::PathBuf};
 
 use clap::Parser;
 use skrifa::{
@@ -18,6 +18,10 @@ struct Cli {
     #[clap(long = "tolerance", default_value_t = 0.25, value_parser)]
     /// The tolerance for wonkiness
     tolerance: f32,
+
+    /// Glyphs to compare
+    #[clap(long = "glyphset")]
+    glyphset: Option<String>,
 
     /// The font file to compare
     font: PathBuf,
@@ -41,10 +45,24 @@ fn main() {
     let font_binary = std::fs::read(cli.font).expect("Couldn't open file");
     let fontref = FontRef::new(&font_binary).expect("Couldn't parse font");
     let instances = fontref.named_instances();
+    let glyphs_to_check: BTreeSet<String> = if let Some(glyphset) = cli.glyphset {
+        glyphset
+            .split_ascii_whitespace()
+            .map(|x| x.to_string())
+            .collect()
+    } else {
+        BTreeSet::new()
+    };
     if instances.is_empty() {
-        test_font(&fontref, LocationRef::default(), cli.tolerance);
+        test_font(
+            &fontref,
+            LocationRef::default(),
+            &glyphs_to_check,
+            cli.tolerance,
+        );
         std::process::exit(0);
     }
+
     for instance in instances.iter() {
         let user_coords = instance.user_coords();
         let location = instance.location();
@@ -61,10 +79,20 @@ fn main() {
                 .unwrap_or("Unnamed".to_string()),
             userlocation
         );
-        test_font(&fontref, (&location).into(), cli.tolerance);
+        test_font(
+            &fontref,
+            (&location).into(),
+            &glyphs_to_check,
+            cli.tolerance,
+        );
     }
 }
-fn test_font(fontref: &FontRef, location: LocationRef, tolerance: f32) {
+fn test_font(
+    fontref: &FontRef,
+    location: LocationRef,
+    glyphs_to_check: &BTreeSet<String>,
+    tolerance: f32,
+) {
     let outlines = fontref.outline_glyphs();
     let glyphcount = fontref
         .maxp()
@@ -72,6 +100,10 @@ fn test_font(fontref: &FontRef, location: LocationRef, tolerance: f32) {
         .unwrap_or_default();
     for glyphid in 0..glyphcount {
         let glyphid = GlyphId::new(glyphid);
+        let glyphname = gid_to_name(fontref, glyphid);
+        if glyphs_to_check.len() > 0 && !glyphs_to_check.contains(&glyphname) {
+            continue;
+        }
         let glyph = fontref
             .loca(None)
             .unwrap()
@@ -82,11 +114,10 @@ fn test_font(fontref: &FontRef, location: LocationRef, tolerance: f32) {
         }
         let settings = DrawSettings::unhinted(Size::new(2000.0), location);
         let comparison = compare_glyph(&outlines, settings, glyphid, tolerance);
-        if comparison > 0.0 {
+        if comparison > 0.0 && comparison < 1000.0 {
             println!(
                 " Wonkiness increased by {:.2}% in glyph {}",
-                comparison,
-                gid_to_name(fontref, glyphid)
+                comparison, glyphname
             );
         }
     }
