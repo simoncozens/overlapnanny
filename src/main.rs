@@ -112,7 +112,7 @@ fn test_font(
         if matches!(glyph, Some(Glyph::Composite(_))) {
             continue;
         }
-        let settings = DrawSettings::unhinted(Size::new(2000.0), location);
+        let settings = DrawSettings::unhinted(Size::unscaled(), location);
         let comparison = compare_glyph(&outlines, settings, glyphid, tolerance);
         if comparison > 0.0 && comparison < 1000.0 {
             println!(
